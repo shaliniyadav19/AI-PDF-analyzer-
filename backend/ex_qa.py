@@ -1,13 +1,24 @@
 from transformers import pipeline
 
-qa_pipeline = pipeline(
-    "question-answering",
-    model="deepset/roberta-base-squad2",
-    tokenizer="deepset/roberta-base-squad2"
-)
+qa_pipeline = None
+
+
+def load_qa_pipeline():
+    global qa_pipeline
+
+    if qa_pipeline is None:
+        qa_pipeline = pipeline(
+            task="question-answering",
+            model="deepset/roberta-base-squad2",
+            tokenizer="deepset/roberta-base-squad2"
+        )
+
+    return qa_pipeline
 
 
 def get_best_answer(question, retrieved_chunks, min_score=0.35):
+    qa = load_qa_pipeline()
+
     best_answer = {
         "answer": "No confident answer found in the document.",
         "score": 0.0,
@@ -18,7 +29,7 @@ def get_best_answer(question, retrieved_chunks, min_score=0.35):
         chunk = item["chunk"]
         context = chunk["text"]
 
-        result = qa_pipeline(
+        result = qa(
             question=question,
             context=context
         )
@@ -26,7 +37,6 @@ def get_best_answer(question, retrieved_chunks, min_score=0.35):
         answer = result.get("answer", "").strip()
         score = min(float(result.get("score", 0)), 1.0)
 
-        # Reject bad/very short/weird answers
         if not answer:
             continue
 
@@ -44,10 +54,6 @@ def get_best_answer(question, retrieved_chunks, min_score=0.35):
             }
 
     if best_answer["score"] < min_score:
-        return {
-            "answer": "No confident answer found in the document.",
-            "score": best_answer["score"],
-            "chunk": best_answer["chunk"]
-        }
+        best_answer["answer"] = "No confident answer found in the document."
 
     return best_answer
