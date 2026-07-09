@@ -1,24 +1,58 @@
-from transformers import pipeline
+import torch
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering
 
-qa_pipeline = None
+MODEL_NAME = "deepset/roberta-base-squad2"
+
+tokenizer = None
+model = None
 
 
-def load_qa_pipeline():
-    global qa_pipeline
+def load_qa_model():
+    global tokenizer, model
 
-    if qa_pipeline is None:
-        qa_pipeline = pipeline(
-            task="question-answering",
-            model="deepset/roberta-base-squad2",
-            tokenizer="deepset/roberta-base-squad2"
-        )
+    if tokenizer is None or model is None:
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        model = AutoModelForQuestionAnswering.from_pretrained(MODEL_NAME)
+        model.eval()
 
-    return qa_pipeline
+    return tokenizer, model
+
+
+def answer_from_context(question, context):
+    tokenizer, model = load_qa_model()
+
+    inputs = tokenizer(
+        question,
+        context,
+        return_tensors="pt",
+        truncation=True,
+        max_length=512
+    )
+
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    start_scores = outputs.start_logits
+    end_scores = outputs.end_logits
+
+    start_index = torch.argmax(start_scores)
+    end_index = torch.argmax(end_scores)
+
+    if end_index < start_index:
+        return "", 0.0
+
+    answer_ids = inputs["input_ids"][0][start_index:end_index + 1]
+    answer = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
+
+    start_prob = torch.softmax(start_scores, dim=1)[0][start_index]
+    end_prob = torch.softmax(end_scores, dim=1)[0][end_index]
+
+    score = float((start_prob * end_prob).item())
+
+    return answer, score
 
 
 def get_best_answer(question, retrieved_chunks, min_score=0.35):
-    qa = load_qa_pipeline()
-
     best_answer = {
         "answer": "No confident answer found in the document.",
         "score": 0.0,
@@ -29,13 +63,7 @@ def get_best_answer(question, retrieved_chunks, min_score=0.35):
         chunk = item["chunk"]
         context = chunk["text"]
 
-        result = qa(
-            question=question,
-            context=context
-        )
-
-        answer = result.get("answer", "").strip()
-        score = min(float(result.get("score", 0)), 1.0)
+        answer, score = answer_from_context(question, context)
 
         if not answer:
             continue
@@ -49,7 +77,7 @@ def get_best_answer(question, retrieved_chunks, min_score=0.35):
         if score > best_answer["score"]:
             best_answer = {
                 "answer": answer,
-                "score": score,
+                "score": min(score, 1.0),
                 "chunk": chunk
             }
 
