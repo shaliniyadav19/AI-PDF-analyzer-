@@ -171,7 +171,7 @@ Generate a downloadable PDF report containing:
 ## Clone the repository
 
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/PDF-Analyzer.git
+git clone https://github.com/shaliniyadav19/PDF-Analyzer.git
 ```
 
 ## Navigate to the project
